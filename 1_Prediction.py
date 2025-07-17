@@ -1,0 +1,673 @@
+# import streamlit as st
+# import pandas as pd
+# import numpy as np
+# import datetime as dt
+# from sklearn.preprocessing import RobustScaler
+# from sklearn.cluster import DBSCAN
+# from sklearn.neighbors import NearestNeighbors
+# import matplotlib.pyplot as plt
+# from mpl_toolkits.mplot3d import Axes3D
+# import seaborn as sns
+
+# # Suppress warnings for cleaner output
+# import warnings
+# warnings.filterwarnings('ignore')
+
+# # --- Configuration ---
+# FILE_PATH = 'online_retail_II.xlsx'
+
+# # --- User-defined Cluster Labels ---
+# USER_LABEL_MAP = {
+#     -1: 'VIP Customers',
+#      0: 'Churned Low Spenders',
+#      1: 'Engaged High Spenders',
+#      2: 'Lost One-Time Buyers',
+#      3: 'New High-Value Buyers'
+# }
+
+# # --- Data Loading and Preprocessing Function ---
+# @st.cache_data
+# def load_and_preprocess_data(file_path):
+#     """
+#     Loads the retail data and performs all necessary preprocessing steps.
+#     """
+#     try:
+#         data = pd.read_excel(file_path)
+#     except FileNotFoundError:
+#         st.error(f"Error: The file '{file_path}' was not found. "
+#                  "Please ensure it's in the same directory as the Streamlit app.")
+#         return None
+
+#     df = data.copy()
+
+#     # 1. Drop rows with missing 'Description'
+#     df.dropna(axis=0, how='any', subset=['Description'], inplace=True)
+
+#     # 2. Remove cancelled transactions (Invoice starting with 'C')
+#     df = df[~df['Invoice'].astype(str).str.startswith('C')]
+
+#     # 3. Remove transactions with negative 'Quantity'
+#     df = df[df['Quantity'] > 0]
+
+#     # 4. Remove transactions with Invoice starting with 'A' and null Customer ID (bad debt adjustments)
+#     df = df[~((df['Invoice'].astype(str).str.startswith('A')) & (df['Customer ID'].isnull()))]
+
+#     # 5. Handle duplicates
+#     df.drop_duplicates(inplace=True)
+#     df.reset_index(drop=True, inplace=True)
+
+#     # 6. Fill missing 'Customer ID' with 'Invoice' number and ensure numeric type
+#     df['Customer ID'] = df['Customer ID'].fillna(df['Invoice']).astype(str)
+#     df['Customer ID'] = pd.to_numeric(df['Customer ID'], errors='coerce')
+#     df.dropna(subset=['Customer ID'], inplace=True)
+#     df['Customer ID'] = df['Customer ID'].astype(int)
+
+#     # 7. Calculate 'TotalPrice' for each transaction
+#     df['TotalPrice'] = df['Quantity'] * df['Price']
+
+#     return df
+
+# # --- RFM Feature Engineering Function ---
+# @st.cache_data
+# def calculate_rfm(df):
+#     """
+#     Calculates Recency, Orders, and Price features for each customer.
+#     """
+#     snapshot_date = df['InvoiceDate'].max() + dt.timedelta(days=1)
+
+#     rfm_df = df.groupby('Customer ID').agg({
+#         'InvoiceDate': lambda date: (snapshot_date - date.max()).days,
+#         'Invoice': 'nunique',
+#         'TotalPrice': 'sum'
+#     }).reset_index()
+
+#     rfm_df.rename(columns={'InvoiceDate': 'Recency',
+#                            'Invoice': 'Orders',
+#                            'TotalPrice': 'Price'}, inplace=True)
+
+#     rfm_df = rfm_df[rfm_df['Price'] > 0]
+#     rfm_df = rfm_df[rfm_df['Orders'] > 0]
+
+#     return rfm_df, snapshot_date
+
+# # --- Clustering Function (DBSCAN) ---
+# @st.cache_resource
+# def train_dbscan_model(rfm_df_for_scaling, eps, min_samples):
+#     """
+#     Scales RFM features using RobustScaler and trains the DBSCAN clustering model.
+#     Returns the scaler and the trained DBSCAN model.
+#     """
+#     scaler = RobustScaler()
+#     rfm_scaled = scaler.fit_transform(rfm_df_for_scaling)
+#     rfm_scaled_df = pd.DataFrame(rfm_scaled, columns=['Recency_Scaled', 'Orders_Scaled', 'Price_Scaled'])
+
+#     dbscan = DBSCAN(eps=eps, min_samples=min_samples)
+#     dbscan.fit(rfm_scaled_df)
+
+#     return scaler, dbscan, rfm_scaled_df
+
+# # --- Main Application Logic for Prediction Page ---
+# def main():
+#     st.set_page_config(layout="wide", page_title="Customer Segmentation App (DBSCAN)")
+
+#     st.title("🛍️ Customer Segmentation and Prediction (DBSCAN)")
+#     st.markdown("This application helps you understand customer segments based on RFM (Recency, Orders, Price) analysis using **DBSCAN** clustering.")
+#     st.markdown("DBSCAN identifies clusters based on density, and can also identify 'noise' points that don't belong to any cluster.")
+
+#     # --- DBSCAN Parameters in Sidebar ---
+#     st.sidebar.header("DBSCAN Parameters")
+#     eps = st.sidebar.slider("Epsilon (eps): Max distance between samples for one to be considered as in the neighborhood of the other.",
+#                             min_value=0.1, max_value=5.0, value=0.5, step=0.1)
+#     min_samples = st.sidebar.slider("Min Samples: The number of samples (or total weight) in a neighborhood for a point to be considered as a core point.",
+#                                     min_value=1, max_value=50, value=5, step=1)
+
+#     # --- Data Loading and Model Training ---
+#     st.sidebar.header("Application Status")
+#     with st.spinner("Loading, preprocessing data, and training model... This may take a moment."):
+#         processed_df = load_and_preprocess_data(FILE_PATH)
+
+#         if processed_df is None:
+#             st.stop()
+
+#         rfm_df, snapshot_date = calculate_rfm(processed_df)
+#         rfm_features = rfm_df[['Recency', 'Orders', 'Price']]
+#         scaler, dbscan_model, rfm_scaled_df = train_dbscan_model(rfm_features, eps, min_samples)
+
+#         # Add cluster labels to the RFM DataFrame
+#         rfm_df['Cluster'] = dbscan_model.labels_
+#         rfm_scaled_df['Cluster'] = dbscan_model.labels_
+
+#         # Store in session state for other pages
+#         st.session_state['processed_df'] = processed_df
+#         st.session_state['rfm_df'] = rfm_df
+#         st.session_state['rfm_scaled_df'] = rfm_scaled_df
+#         st.session_state['scaler'] = scaler
+#         st.session_state['dbscan_model'] = dbscan_model
+#         st.session_state['user_label_map'] = USER_LABEL_MAP
+#         st.session_state['snapshot_date'] = snapshot_date
+
+#     st.sidebar.success("Data loaded, preprocessed, and clustered successfully!")
+
+#     # --- Cluster Label Mapping using User's Labels ---
+#     cluster_label_map = USER_LABEL_MAP
+#     rfm_df['Segment_Label'] = rfm_df['Cluster'].map(cluster_label_map)
+
+#     # --- Cluster Summaries in Sidebar ---
+#     st.sidebar.header("Cluster Summaries")
+#     unique_cluster_nums = sorted(rfm_df['Cluster'].unique(), key=lambda x: (x == -1, x))
+
+#     for cluster_num in unique_cluster_nums:
+#         label = cluster_label_map.get(cluster_num, f"Cluster {cluster_num} (Unmapped)")
+#         st.sidebar.subheader(f"Segment: {label}")
+#         summary_df = rfm_df[rfm_df['Cluster'] == cluster_num]
+#         if not summary_df.empty:
+#             summary = summary_df[['Recency', 'Orders', 'Price']].mean()
+#             st.sidebar.write(f"**Average Recency (days since last purchase):** {summary['Recency']:.2f}")
+#             st.sidebar.write(f"**Average Orders (total invoices):** {summary['Orders']:.2f}")
+#             st.sidebar.write(f"**Average Price (total spent):** £{summary['Price']:.2f}")
+#             st.sidebar.write(f"**Number of customers:** {len(summary_df)}")
+#         else:
+#             st.sidebar.write("No customers in this segment.")
+#         st.sidebar.markdown("---")
+
+#     # --- Prediction Section in Main Area (DBSCAN Specific) ---
+#     st.header("Predict Customer Segment")
+#     st.write("Enter a Customer ID to check if they are an existing customer or a new one, then predict their segment.")
+
+#     customer_id_input = st.number_input("Enter Customer ID (e.g., 12345 or a new ID like 99999)", min_value=1, value=12347, step=1, key="customer_id_input")
+
+#     # Initialize session state variables for prediction inputs and flags
+#     if 'customer_checked' not in st.session_state:
+#         st.session_state['customer_checked'] = False
+#     if 'is_existing_customer' not in st.session_state:
+#         st.session_state['is_existing_customer'] = None
+#     if 'show_transaction_inputs' not in st.session_state:
+#         st.session_state['show_transaction_inputs'] = False
+#     if 'current_predicted_recency' not in st.session_state:
+#         st.session_state['current_predicted_recency'] = None
+#     if 'current_predicted_orders' not in st.session_state:
+#         st.session_state['current_predicted_orders'] = None
+#     if 'current_predicted_price' not in st.session_state:
+#         st.session_state['current_predicted_price'] = None
+#     if 'prediction_ready' not in st.session_state:
+#         st.session_state['prediction_ready'] = False
+#     if 'simulate_new_order' not in st.session_state:
+#         st.session_state['simulate_new_order'] = False
+#     if 'historical_recency' not in st.session_state:
+#         st.session_state['historical_recency'] = None
+#     if 'historical_orders' not in st.session_state:
+#         st.session_state['historical_orders'] = None
+#     if 'historical_price' not in st.session_state:
+#         st.session_state['historical_price'] = None
+
+
+#     # Button to check customer ID
+#     if st.button("Check Customer ID", key="check_customer_id_button"):
+#         st.session_state['customer_checked'] = True # Mark that customer ID has been checked
+#         st.session_state['prediction_ready'] = False # Reset prediction readiness
+#         st.session_state['show_transaction_inputs'] = False # Hide transaction inputs initially
+#         st.session_state['simulate_new_order'] = False # Reset checkbox state
+
+#         if customer_id_input in rfm_df['Customer ID'].values:
+#             st.session_state['is_existing_customer'] = True
+#             st.session_state['customer_status_message'] = f"Welcome back, Customer ID: {customer_id_input}!"
+#             existing_customer_data = rfm_df[rfm_df['Customer ID'] == customer_id_input].iloc[0]
+#             st.session_state['historical_recency'] = existing_customer_data['Recency']
+#             st.session_state['historical_orders'] = existing_customer_data['Orders']
+#             st.session_state['historical_price'] = existing_customer_data['Price']
+#             st.success(st.session_state['customer_status_message'])
+#             st.info(f"Historical RFM: Recency={st.session_state['historical_recency']:.2f}, Orders={st.session_state['historical_orders']:.2f}, Price=£{st.session_state['historical_price']:.2f}")
+
+#         else:
+#             st.session_state['is_existing_customer'] = False
+#             st.session_state['customer_status_message'] = f"Hello to the new customer (ID: {customer_id_input})!"
+#             st.warning(st.session_state['customer_status_message'])
+#             st.session_state['show_transaction_inputs'] = True # Always show transaction inputs for new customer
+
+
+#     # Logic for existing customer: show checkbox after check
+#     if st.session_state['customer_checked'] and st.session_state['is_existing_customer']:
+#         st.session_state['simulate_new_order'] = st.checkbox("Simulate a new order for this customer?", value=st.session_state['simulate_new_order'], key="simulate_new_order_checkbox")
+#         if st.session_state['simulate_new_order']:
+#             st.session_state['show_transaction_inputs'] = True
+#         else:
+#             st.session_state['show_transaction_inputs'] = False
+#             # If not simulating, prepare historical data for prediction
+#             st.session_state['current_predicted_recency'] = st.session_state['historical_recency']
+#             st.session_state['current_predicted_orders'] = st.session_state['historical_orders']
+#             st.session_state['current_predicted_price'] = st.session_state['historical_price']
+#             st.session_state['prediction_ready'] = True # Ready to predict with historical data
+
+#     # Display transaction input fields if needed (for new customer or existing customer simulating new order)
+#     if st.session_state['show_transaction_inputs']:
+#         st.write("Please enter the details for the transaction:")
+#         col_new1, col_new2, col_new3 = st.columns(3)
+#         with col_new1:
+#             new_invoice_no = st.text_input("InvoiceNo", value="NEW001", key="new_invoice_no")
+#             new_stock_code = st.text_input("StockCode", value="ITEM001", key="new_stock_code")
+#             new_description = st.text_input("Description", value="New Customer Item", key="new_description")
+#         with col_new2:
+#             new_quantity = st.number_input("Quantity", min_value=1, value=10, key="new_quantity")
+#             new_price_per_item = st.number_input("Price (per item)", min_value=0.01, value=5.00, format="%.2f", key="new_price_per_item")
+#             new_invoice_date = st.date_input("InvoiceDate", value=dt.date.today(), key="new_invoice_date")
+#         with col_new3:
+#             new_country = st.text_input("Country", value="United Kingdom", key="new_country")
+#             st.markdown("*(Customer ID is already entered above)*")
+
+#         # Button to calculate RFM and trigger prediction
+#         if st.button("Calculate RFM & Predict Segment", key="calculate_predict_button"):
+#             # Calculate RFM for the new/simulated transaction
+#             calculated_recency = (st.session_state['snapshot_date'] - dt.datetime.combine(new_invoice_date, dt.time.min)).days
+#             calculated_orders = 1 # For a single new transaction
+#             calculated_price = new_quantity * new_price_per_item
+
+#             if st.session_state['is_existing_customer'] and st.session_state['simulate_new_order']:
+#                 # For existing customer simulating new order, update RFM cumulatively
+#                 st.session_state['current_predicted_recency'] = calculated_recency # Recency is always based on the latest purchase
+#                 st.session_state['current_predicted_orders'] = st.session_state['historical_orders'] + calculated_orders # Add 1 to existing orders
+#                 st.session_state['current_predicted_price'] = st.session_state['historical_price'] + calculated_price # Add new price to existing
+#                 st.info(f"Updated RFM for new order: Recency={st.session_state['current_predicted_recency']:.2f}, Orders={st.session_state['current_predicted_orders']:.2f}, Price=£{st.session_state['current_predicted_price']:.2f}")
+#             else:
+#                 # For new customer, this is their first RFM
+#                 st.session_state['current_predicted_recency'] = calculated_recency
+#                 st.session_state['current_predicted_orders'] = calculated_orders
+#                 st.session_state['current_predicted_price'] = calculated_price
+#                 st.info(f"Calculated RFM for new customer: Recency={calculated_recency}, Orders={calculated_orders}, Price=£{calculated_price:.2f}")
+
+#             st.session_state['prediction_ready'] = True # Prediction is now ready
+
+#     # --- Display Prediction Results ---
+#     # This block now triggers only if prediction_ready is True
+#     if st.session_state['prediction_ready'] and \
+#        st.session_state['current_predicted_recency'] is not None and \
+#        st.session_state['current_predicted_orders'] is not None and \
+#        st.session_state['current_predicted_price'] is not None:
+
+#         new_customer_data_for_prediction = pd.DataFrame([[st.session_state['current_predicted_recency'], st.session_state['current_predicted_orders'], st.session_state['current_predicted_price']]],
+#                                          columns=['Recency', 'Orders', 'Price'])
+#         new_customer_scaled = scaler.transform(new_customer_data_for_prediction)
+
+#         if not rfm_scaled_df.empty:
+#             nn_model = NearestNeighbors(n_neighbors=1)
+#             nn_model.fit(rfm_scaled_df[['Recency_Scaled', 'Orders_Scaled', 'Price_Scaled']])
+
+#             distances, indices = nn_model.kneighbors(new_customer_scaled)
+#             closest_point_index_in_rfm_scaled_df = indices[0][0]
+
+#             predicted_cluster_num = rfm_scaled_df.loc[closest_point_index_in_rfm_scaled_df, 'Cluster']
+#             predicted_label = cluster_label_map.get(predicted_cluster_num, f"Cluster {predicted_cluster_num} (Unmapped)")
+
+#             st.subheader(f"Predicted Segment: {predicted_label}")
+#             st.markdown("---")
+#             st.write("Here's a summary of the characteristics for this predicted segment:")
+
+#             summary_predicted_cluster = rfm_df[rfm_df['Cluster'] == predicted_cluster_num][['Recency', 'Orders', 'Price']].mean()
+#             st.write(f"**Average Recency:** {summary_predicted_cluster['Recency']:.2f} days")
+#             st.write(f"**Average Orders:** {summary_predicted_cluster['Orders']:.2f} invoices")
+#             st.write(f"**Average Price:** £{summary_predicted_cluster['Price']:.2f}")
+#             st.write(f"**Number of customers in segment:** {len(rfm_df[rfm_df['Cluster'] == predicted_cluster_num])}")
+
+#             st.markdown(f"**Description of '{predicted_label}':**")
+#             if predicted_label == 'VIP Customers':
+#                 st.write("These customers are identified as VIPs. According to DBSCAN, these might be noise points or a distinct cluster depending on parameters. They are likely your most valuable customers, purchasing very recently, making many orders, and spending a significant amount (high price).")
+#             elif predicted_label == 'Churned Low Spenders':
+#                 st.write("These customers have not purchased recently, make few orders, and spend little (low price). They are likely churned and were not highly profitable. Focus on understanding why they left, but prioritize higher-value segments for re-engagement.")
+#             elif predicted_label == 'Engaged High Spenders':
+#                 st.write("These customers are highly engaged and contribute significantly to revenue. They make many orders and and spend well (high price). Nurture them to become VIPs.")
+#             elif predicted_label == 'Lost One-Time Buyers':
+#                 st.write("These customers made a purchase a long time ago and haven't returned, often having made only one order with low price. Re-engagement might be challenging but worth a try with specific campaigns.")
+#             elif predicted_label == 'New High-Value Buyers':
+#                 st.write("These are recent customers who have already shown good spending potential. They are important for growth; encourage repeat orders.")
+#             else:
+#                 st.write("No specific description available for this cluster. This might indicate an unusual customer profile or a need to refine cluster definitions.")
+
+#         else:
+#             st.warning("The dataset is empty or no clusters were formed. Please ensure your data file is correct and adjust 'eps' and 'min_samples' if necessary.")
+#             st.subheader("Predicted Segment: Undefined (No Data or Clusters Formed)")
+
+#     st.markdown("---")
+#     st.markdown("App developed using your provided code logic, adapted for DBSCAN and your specific cluster labels.")
+
+# if __name__ == "__main__":
+#     main()
+
+
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+import datetime as dt
+from sklearn.preprocessing import RobustScaler
+from sklearn.cluster import DBSCAN
+from sklearn.neighbors import NearestNeighbors
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import seaborn as sns
+
+# Suppress warnings for cleaner output
+import warnings
+warnings.filterwarnings('ignore')
+
+# --- Configuration ---
+FILE_PATH = 'online_retail_II.xlsx'
+
+# --- User-defined Cluster Labels ---
+USER_LABEL_MAP = {
+    -1: 'VIP Customers',
+     0: 'Churned Low Spenders',
+     1: 'Engaged High Spenders',
+     2: 'Lost One-Time Buyers',
+     3: 'New High-Value Buyers'
+}
+
+# --- Data Loading and Preprocessing Function ---
+@st.cache_data
+def load_and_preprocess_data(file_path):
+    """
+    Loads the retail data and performs all necessary preprocessing steps.
+    """
+    try:
+        data = pd.read_excel(file_path)
+    except FileNotFoundError:
+        st.error(f"Error: The file '{file_path}' was not found. "
+                 "Please ensure it's in the same directory as the Streamlit app.")
+        return None
+
+    df = data.copy()
+
+    # 1. Drop rows with missing 'Description'
+    df.dropna(axis=0, how='any', subset=['Description'], inplace=True)
+
+    # 2. Remove cancelled transactions (Invoice starting with 'C')
+    df = df[~df['Invoice'].astype(str).str.startswith('C')]
+
+    # 3. Remove transactions with negative 'Quantity'
+    df = df[df['Quantity'] > 0]
+
+    # 4. Remove transactions with Invoice starting with 'A' and null Customer ID (bad debt adjustments)
+    df = df[~((df['Invoice'].astype(str).str.startswith('A')) & (df['Customer ID'].isnull()))]
+
+    # 5. Handle duplicates
+    df.drop_duplicates(inplace=True)
+    df.reset_index(drop=True, inplace=True)
+
+    # 6. Fill missing 'Customer ID' with 'Invoice' number and ensure numeric type
+    df['Customer ID'] = df['Customer ID'].fillna(df['Invoice']).astype(str)
+    df['Customer ID'] = pd.to_numeric(df['Customer ID'], errors='coerce')
+    df.dropna(subset=['Customer ID'], inplace=True)
+    df['Customer ID'] = df['Customer ID'].astype(int)
+
+    # 7. Calculate 'TotalPrice' for each transaction
+    df['TotalPrice'] = df['Quantity'] * df['Price']
+
+    return df
+
+# --- RFM Feature Engineering Function ---
+@st.cache_data
+def calculate_rfm(df):
+    """
+    Calculates Recency, Orders, and Price features for each customer.
+    """
+    snapshot_date = df['InvoiceDate'].max() + dt.timedelta(days=1)
+
+    rfm_df = df.groupby('Customer ID').agg({
+        'InvoiceDate': lambda date: (snapshot_date - date.max()).days,
+        'Invoice': 'nunique',
+        'TotalPrice': 'sum'
+    }).reset_index()
+
+    rfm_df.rename(columns={'InvoiceDate': 'Recency',
+                           'Invoice': 'Orders',
+                           'TotalPrice': 'Price'}, inplace=True)
+
+    rfm_df = rfm_df[rfm_df['Price'] > 0]
+    rfm_df = rfm_df[rfm_df['Orders'] > 0]
+
+    return rfm_df, snapshot_date
+
+# --- Clustering Function (DBSCAN) ---
+@st.cache_resource
+def train_dbscan_model(rfm_df_for_scaling, eps, min_samples):
+    """
+    Scales RFM features using RobustScaler and trains the DBSCAN clustering model.
+    Returns the scaler and the trained DBSCAN model.
+    """
+    scaler = RobustScaler()
+    rfm_scaled = scaler.fit_transform(rfm_df_for_scaling)
+    rfm_scaled_df = pd.DataFrame(rfm_scaled, columns=['Recency_Scaled', 'Orders_Scaled', 'Price_Scaled'])
+
+    dbscan = DBSCAN(eps=eps, min_samples=min_samples)
+    dbscan.fit(rfm_scaled_df)
+
+    return scaler, dbscan, rfm_scaled_df
+
+# --- Main Application Logic for Prediction Page ---
+def main():
+    st.set_page_config(layout="wide", page_title="Customer Segmentation App (DBSCAN)")
+
+    st.title("🛍️ Customer Segmentation and Prediction (DBSCAN)")
+    st.markdown("This application helps you understand customer segments based on RFM (Recency, Orders, Price) analysis using **DBSCAN** clustering.")
+    st.markdown("DBSCAN identifies clusters based on density, and can also identify 'noise' points that don't belong to any cluster.")
+
+    # --- DBSCAN Parameters in Sidebar ---
+    st.sidebar.header("DBSCAN Parameters")
+    eps = st.sidebar.slider("Epsilon (eps): Max distance between samples for one to be considered as in the neighborhood of the other.",
+                            min_value=0.1, max_value=5.0, value=0.5, step=0.1)
+    min_samples = st.sidebar.slider("Min Samples: The number of samples (or total weight) in a neighborhood for a point to be considered as a core point.",
+                                    min_value=1, max_value=50, value=5, step=1)
+
+    # --- Data Loading and Model Training ---
+    st.sidebar.header("Application Status")
+    with st.spinner("Loading, preprocessing data, and training model... This may take a moment."):
+        processed_df = load_and_preprocess_data(FILE_PATH)
+
+        if processed_df is None:
+            st.stop()
+
+        rfm_df, snapshot_date = calculate_rfm(processed_df)
+        rfm_features = rfm_df[['Recency', 'Orders', 'Price']]
+        scaler, dbscan_model, rfm_scaled_df = train_dbscan_model(rfm_features, eps, min_samples)
+
+        # Add cluster labels to the RFM DataFrame
+        rfm_df['Cluster'] = dbscan_model.labels_
+        rfm_scaled_df['Cluster'] = dbscan_model.labels_
+
+        # Store in session state for other pages
+        st.session_state['processed_df'] = processed_df
+        st.session_state['rfm_df'] = rfm_df
+        st.session_state['rfm_scaled_df'] = rfm_scaled_df
+        st.session_state['scaler'] = scaler
+        st.session_state['dbscan_model'] = dbscan_model
+        st.session_state['user_label_map'] = USER_LABEL_MAP
+        st.session_state['snapshot_date'] = snapshot_date
+
+    st.sidebar.success("Data loaded, preprocessed, and clustered successfully!")
+
+    # --- Cluster Label Mapping using User's Labels ---
+    cluster_label_map = USER_LABEL_MAP
+    rfm_df['Segment_Label'] = rfm_df['Cluster'].map(cluster_label_map)
+
+    # --- Cluster Summaries in Sidebar ---
+    st.sidebar.header("Cluster Summaries")
+    unique_cluster_nums = sorted(rfm_df['Cluster'].unique(), key=lambda x: (x == -1, x))
+
+    for cluster_num in unique_cluster_nums:
+        label = cluster_label_map.get(cluster_num, f"Cluster {cluster_num} (Unmapped)")
+        st.sidebar.subheader(f"Segment: {label}")
+        summary_df = rfm_df[rfm_df['Cluster'] == cluster_num]
+        if not summary_df.empty:
+            summary = summary_df[['Recency', 'Orders', 'Price']].mean()
+            st.sidebar.write(f"**Average Recency (days since last purchase):** {summary['Recency']:.2f}")
+            st.sidebar.write(f"**Average Orders (total invoices):** {summary['Orders']:.2f}")
+            st.sidebar.write(f"**Average Price (total spent):** £{summary['Price']:.2f}")
+            st.sidebar.write(f"**Number of customers:** {len(summary_df)}")
+        else:
+            st.sidebar.write("No customers in this segment.")
+        st.sidebar.markdown("---")
+
+    # --- Prediction Section in Main Area (DBSCAN Specific) ---
+    st.header("Predict Customer Segment")
+    st.write("Enter a Customer ID to check if they are an existing customer or a new one, then predict their segment.")
+
+    customer_id_input = st.number_input("Enter Customer ID (e.g., 12345 or a new ID like 99999)", min_value=1, value=12347, step=1, key="customer_id_input")
+
+    # Initialize session state variables for prediction inputs and flags
+    if 'customer_checked' not in st.session_state:
+        st.session_state['customer_checked'] = False
+    if 'is_existing_customer' not in st.session_state:
+        st.session_state['is_existing_customer'] = None
+    if 'show_transaction_inputs' not in st.session_state:
+        st.session_state['show_transaction_inputs'] = False
+    if 'current_predicted_recency' not in st.session_state:
+        st.session_state['current_predicted_recency'] = None
+    if 'current_predicted_orders' not in st.session_state:
+        st.session_state['current_predicted_orders'] = None
+    if 'current_predicted_price' not in st.session_state:
+        st.session_state['current_predicted_price'] = None
+    if 'prediction_ready' not in st.session_state:
+        st.session_state['prediction_ready'] = False
+    if 'simulate_new_order' not in st.session_state:
+        st.session_state['simulate_new_order'] = False
+    if 'historical_recency' not in st.session_state:
+        st.session_state['historical_recency'] = None
+    if 'historical_orders' not in st.session_state:
+        st.session_state['historical_orders'] = None
+    if 'historical_price' not in st.session_state:
+        st.session_state['historical_price'] = None
+
+
+    # Button to check customer ID
+    if st.button("Check Customer ID", key="check_customer_id_button"):
+        st.session_state['customer_checked'] = True # Mark that customer ID has been checked
+        st.session_state['prediction_ready'] = False # Reset prediction readiness
+        st.session_state['show_transaction_inputs'] = False # Hide transaction inputs initially
+        st.session_state['simulate_new_order'] = False # Reset checkbox state
+
+        if customer_id_input in rfm_df['Customer ID'].values:
+            st.session_state['is_existing_customer'] = True
+            st.session_state['customer_status_message'] = f"Welcome back, Customer ID: {customer_id_input}!"
+            existing_customer_data = rfm_df[rfm_df['Customer ID'] == customer_id_input].iloc[0]
+            st.session_state['historical_recency'] = existing_customer_data['Recency']
+            st.session_state['historical_orders'] = existing_customer_data['Orders']
+            st.session_state['historical_price'] = existing_customer_data['Price']
+            st.success(st.session_state['customer_status_message'])
+            st.info(f"Historical RFM: Recency={st.session_state['historical_recency']:.2f}, Orders={st.session_state['historical_orders']:.2f}, Price=£{st.session_state['historical_price']:.2f}")
+
+        else:
+            st.session_state['is_existing_customer'] = False
+            st.session_state['customer_status_message'] = f"Hello to the new customer (ID: {customer_id_input})!"
+            st.warning(st.session_state['customer_status_message'])
+            st.session_state['show_transaction_inputs'] = True # Always show transaction inputs for new customer
+
+
+    # Logic for existing customer: show checkbox after check
+    if st.session_state['customer_checked'] and st.session_state['is_existing_customer']:
+        st.session_state['simulate_new_order'] = st.checkbox("Simulate a new order for this customer?", value=st.session_state['simulate_new_order'], key="simulate_new_order_checkbox")
+        if st.session_state['simulate_new_order']:
+            st.session_state['show_transaction_inputs'] = True
+        else:
+            st.session_state['show_transaction_inputs'] = False
+            # If not simulating, prepare historical data for prediction
+            st.session_state['current_predicted_recency'] = st.session_state['historical_recency']
+            st.session_state['current_predicted_orders'] = st.session_state['historical_orders']
+            st.session_state['current_predicted_price'] = st.session_state['historical_price']
+            st.session_state['prediction_ready'] = True # Ready to predict with historical data
+
+    # Display transaction input fields if needed (for new customer or existing customer simulating new order)
+    if st.session_state['show_transaction_inputs']:
+        st.write("Please enter the details for the transaction:")
+        col_new1, col_new2, col_new3 = st.columns(3)
+        with col_new1:
+            new_invoice_no = st.text_input("InvoiceNo", value="NEW001", key="new_invoice_no")
+            new_stock_code = st.text_input("StockCode", value="ITEM001", key="new_stock_code")
+            new_description = st.text_input("Description", value="New Customer Item", key="new_description")
+        with col_new2:
+            new_quantity = st.number_input("Quantity", min_value=1, value=10, key="new_quantity")
+            new_price_per_item = st.number_input("Price (per item)", min_value=0.01, value=5.00, format="%.2f", key="new_price_per_item")
+            new_invoice_date = st.date_input("InvoiceDate", value=dt.date.today(), key="new_invoice_date")
+        with col_new3:
+            new_country = st.text_input("Country", value="United Kingdom", key="new_country")
+            st.markdown("*(Customer ID is already entered above)*")
+
+        # Button to calculate RFM and trigger prediction
+        if st.button("Calculate RFM & Predict Segment", key="calculate_predict_button"):
+            # Calculate RFM for the new/simulated transaction
+            new_transaction_date = dt.datetime.combine(new_invoice_date, dt.time.min)
+            if new_transaction_date >= st.session_state['snapshot_date']:
+                calculated_recency = 0 # If the new order is on or after snapshot_date, its recency is 0
+            else:
+                calculated_recency = (st.session_state['snapshot_date'] - new_transaction_date).days
+
+            calculated_orders = 1 # For a single new transaction
+            calculated_price = new_quantity * new_price_per_item
+
+            if st.session_state['is_existing_customer'] and st.session_state['simulate_new_order']:
+                # For existing customer simulating new order, update RFM cumulatively
+                st.session_state['current_predicted_recency'] = calculated_recency # Recency is always based on the latest purchase
+                st.session_state['current_predicted_orders'] = st.session_state['historical_orders'] + calculated_orders # Add 1 to existing orders
+                st.session_state['current_predicted_price'] = st.session_state['historical_price'] + calculated_price # Add new price to existing
+                st.info(f"Updated RFM for new order: Recency={st.session_state['current_predicted_recency']:.2f}, Orders={st.session_state['current_predicted_orders']:.2f}, Price=£{st.session_state['current_predicted_price']:.2f}")
+            else:
+                # For new customer, this is their first RFM
+                st.session_state['current_predicted_recency'] = calculated_recency
+                st.session_state['current_predicted_orders'] = calculated_orders
+                st.session_state['current_predicted_price'] = calculated_price
+                st.info(f"Calculated RFM for new customer: Recency={calculated_recency}, Orders={calculated_orders}, Price=£{calculated_price:.2f}")
+
+            st.session_state['prediction_ready'] = True # Prediction is now ready
+
+    # --- Display Prediction Results ---
+    # This block now triggers only if prediction_ready is True
+    if st.session_state['prediction_ready'] and \
+       st.session_state['current_predicted_recency'] is not None and \
+       st.session_state['current_predicted_orders'] is not None and \
+       st.session_state['current_predicted_price'] is not None:
+
+        new_customer_data_for_prediction = pd.DataFrame([[st.session_state['current_predicted_recency'], st.session_state['current_predicted_orders'], st.session_state['current_predicted_price']]],
+                                         columns=['Recency', 'Orders', 'Price'])
+        new_customer_scaled = scaler.transform(new_customer_data_for_prediction)
+
+        if not rfm_scaled_df.empty:
+            nn_model = NearestNeighbors(n_neighbors=1)
+            nn_model.fit(rfm_scaled_df[['Recency_Scaled', 'Orders_Scaled', 'Price_Scaled']])
+
+            distances, indices = nn_model.kneighbors(new_customer_scaled)
+            closest_point_index_in_rfm_scaled_df = indices[0][0]
+
+            predicted_cluster_num = rfm_scaled_df.loc[closest_point_index_in_rfm_scaled_df, 'Cluster']
+            predicted_label = cluster_label_map.get(predicted_cluster_num, f"Cluster {predicted_cluster_num} (Unmapped)")
+
+            st.subheader(f"Predicted Segment: {predicted_label}")
+            st.markdown("---")
+            st.write("Here's a summary of the characteristics for this predicted segment:")
+
+            summary_predicted_cluster = rfm_df[rfm_df['Cluster'] == predicted_cluster_num][['Recency', 'Orders', 'Price']].mean()
+            st.write(f"**Average Recency:** {summary_predicted_cluster['Recency']:.2f} days")
+            st.write(f"**Average Orders:** {summary_predicted_cluster['Orders']:.2f} invoices")
+            st.write(f"**Average Price:** £{summary_predicted_cluster['Price']:.2f}")
+            st.write(f"**Number of customers in segment:** {len(rfm_df[rfm_df['Cluster'] == predicted_cluster_num])}")
+
+            st.markdown(f"**Description of '{predicted_label}':**")
+            if predicted_label == 'VIP Customers':
+                st.write("These customers are identified as VIPs. According to DBSCAN, these might be noise points or a distinct cluster depending on parameters. They are likely your most valuable customers, purchasing very recently, making many orders, and spending a significant amount (high price).")
+            elif predicted_label == 'Churned Low Spenders':
+                st.write("These customers have not purchased recently, make few orders, and spend little (low price). They are likely churned and were not highly profitable. Focus on understanding why they left, but prioritize higher-value segments for re-engagement.")
+            elif predicted_label == 'Engaged High Spenders':
+                st.write("These customers are highly engaged and contribute significantly to revenue. They make many orders and and spend well (high price). Nurture them to become VIPs.")
+            elif predicted_label == 'Lost One-Time Buyers':
+                st.write("These customers made a purchase a long time ago and haven't returned, often having made only one order with low price. Re-engagement might be challenging but worth a try with specific campaigns.")
+            elif predicted_label == 'New High-Value Buyers':
+                st.write("These are recent customers who have already shown good spending potential. They are important for growth; encourage repeat orders.")
+            else:
+                st.write("No specific description available for this cluster. This might indicate an unusual customer profile or a need to refine cluster definitions.")
+
+        else:
+            st.warning("The dataset is empty or no clusters were formed. Please ensure your data file is correct and adjust 'eps' and 'min_samples' if necessary.")
+            st.subheader("Predicted Segment: Undefined (No Data or Clusters Formed)")
+
+    st.markdown("---")
+    st.markdown("App developed using your provided code logic, adapted for DBSCAN and your specific cluster labels.")
+
+if __name__ == "__main__":
+    main()
+
