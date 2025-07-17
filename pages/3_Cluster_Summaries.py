@@ -25,7 +25,7 @@ def app():
     # Ensure Segment_Label is mapped for display
     rfm_df['Segment_Label'] = rfm_df['Cluster'].map(user_label_map)
 
-    st.header("Average RFM Values by Segment")
+    st.header("Average Features Values by Segment")
     st.write("Review the average Recency, Orders, and Price for each customer segment to understand their typical behavior.")
 
     # Get unique cluster numbers and sort them, ensuring -1 (VIP Customers) is handled correctly
