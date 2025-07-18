@@ -12,7 +12,7 @@ def app():
     st.set_page_config(layout="wide", page_title="Customer Segmentation App (DBSCAN)")
 
     st.title("📊 Customer Segment Summaries")
-    st.markdown("This page provides detailed average RFM (Recency, Orders, Price) characteristics for each identified customer segment.")
+    st.markdown("This page provides detailed average Recency, Orders and Price characteristics for each identified customer segment.")
 
     # Retrieve data from session state
     if 'rfm_df' not in st.session_state or 'user_label_map' not in st.session_state:
