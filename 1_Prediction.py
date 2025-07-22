@@ -123,7 +123,7 @@ def main():
     st.sidebar.write(f"Using fixed epsilon (eps): {eps}")
 
     min_samples = st.sidebar.slider("Min Samples: The number of samples (or total weight) in a neighborhood for a point to be considered as a core point.",
-                                    min_value=1, max_value=50, value=5, step=1)
+                                    min_value=1, max_value=50, value=10, step=1)
 
     # --- Data Loading and Model Training ---
     st.sidebar.header("Application Status")
