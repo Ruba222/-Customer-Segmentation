@@ -120,6 +120,7 @@ def main():
 
     # --- DBSCAN Parameters in Sidebar ---
     st.sidebar.header("DBSCAN Parameters")
+    eps = 5
     min_samples = st.sidebar.slider("Min Samples: The number of samples (or total weight) in a neighborhood for a point to be considered as a core point.",
                                     min_value=1, max_value=50, value=5, step=1)
 
