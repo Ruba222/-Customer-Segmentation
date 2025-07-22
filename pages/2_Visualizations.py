@@ -34,18 +34,26 @@ def app():
     # --- Customer Activity by Last Purchase Month Plot ---
     st.header("Customer Activity by Last Purchase Month")
     # st.write("This plot shows the number of customers whose *last purchase* occurred in each month.")
-    st.markdown("""
-       ### 📊 Interpretation of the Plot
+    st.markdown(
+    """
+    <h2 style='text-align: center; color: white;'>📊 Interpretation of the Plot</h2>
+    <p style='font-size:16px; color: white;'>
+    In <b>November 2010</b>, there was a <b>notable spike</b> in customer activity, with over <b>1,400 customers</b> making purchases.
+    </p>
 
-       In **November 2010**, there was a **notable spike** in customer activity, with over **1,400 customers** making purchases.
+    <h4 style='color: white;'>🔍 Possible Reasons:</h4>
+    <ul style='color: white; font-size:16px;'>
+        <li>🎄 <b>Holiday Season</b>: November leads into Christmas, encouraging early gift shopping.</li>
+        <li>🛍️ <b>Sales Events</b>: Promotions like <b>Black Friday</b> likely boosted purchases.</li>
+        <li>📢 <b>Campaigns</b>: Effective marketing or discounts could explain the surge.</li>
+    </ul>
 
-       #### Possible Reasons:
-        - 🎄 **Holiday Season**: November leads into Christmas, encouraging early gift shopping.
-        - 💸 **Sales Events**: Promotions like **Black Friday** likely boosted purchases.
-        - 📢 **Campaigns**: Effective marketing or discounts could explain the surge.
-
-👉 This trend shows the **impact of seasonality** on customer behavior.
-""")
+    <p style='font-size:16px; color: white;'>
+    👉 This trend shows the <b>impact of seasonality</b> on customer behavior.
+    </p>
+    """,
+    unsafe_allow_html=True
+)
 
 
     # Calculate lastPurchaseDate for each customer based on Recency and snapshot_date
