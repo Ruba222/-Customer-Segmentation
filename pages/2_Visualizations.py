@@ -33,7 +33,20 @@ def app():
 
     # --- Customer Activity by Last Purchase Month Plot ---
     st.header("Customer Activity by Last Purchase Month")
-    st.write("This plot shows the number of customers whose *last purchase* occurred in each month.")
+    # st.write("This plot shows the number of customers whose *last purchase* occurred in each month.")
+    st.markdown("""
+       ### 📊 Interpretation of the Plot
+
+       In **November 2010**, there was a **notable spike** in customer activity, with over **1,400 customers** making purchases.
+
+       #### Possible Reasons:
+        - 🎄 **Holiday Season**: November leads into Christmas, encouraging early gift shopping.
+        - 💸 **Sales Events**: Promotions like **Black Friday** likely boosted purchases.
+        - 📢 **Campaigns**: Effective marketing or discounts could explain the surge.
+
+👉 This trend shows the **impact of seasonality** on customer behavior.
+""")
+
 
     # Calculate lastPurchaseDate for each customer based on Recency and snapshot_date
     customer_last_purchase_data = rfm_df[['Customer ID', 'Recency']].copy()
