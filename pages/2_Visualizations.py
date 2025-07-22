@@ -32,7 +32,6 @@ def app():
     rfm_scaled_df['Segment_Label'] = rfm_scaled_df['Cluster'].map(user_label_map)
 
     # --- Customer Activity by Last Purchase Month Plot ---
-    st.header("Customer Activity by Last Purchase Month")
     # st.write("This plot shows the number of customers whose *last purchase* occurred in each month.")
     st.markdown(
     """
